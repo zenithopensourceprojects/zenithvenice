@@ -16,13 +16,7 @@ from herald.bot.middleware import ErrorLoggingMiddleware, UserActivityMiddleware
 from herald.config import get_settings
 
 _PUBLIC_COMMANDS: list[BotCommand] = [
-    BotCommand(command="latest",     description="Newest verified stories"),
-    BotCommand(command="categories", description="Browse by topic"),
-    BotCommand(command="search",     description="Search verified news"),
-    BotCommand(command="saved",      description="Your bookmarks"),
-    BotCommand(command="settings",   description="Notification preferences"),
-    BotCommand(command="about",      description="How we verify"),
-    BotCommand(command="help",       description="Show available commands"),
+    BotCommand(command="start", description="Open India Verified"),
 ]
 
 
