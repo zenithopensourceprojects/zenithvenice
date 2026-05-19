@@ -1,4 +1,4 @@
-# Herald
+# India Verified
 
 The Telegram delivery layer for **India Verified**. Reads verified posts from
 Supabase the moment they are published and broadcasts them to a Telegram
