@@ -1,0 +1,28 @@
+[Unit]
+Description=Herald — Telegram delivery for India Verified
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=herald
+Group=herald
+WorkingDirectory=/opt/herald
+EnvironmentFile=/opt/herald/.env
+ExecStart=/opt/herald/.venv/bin/python -m herald
+Restart=always
+RestartSec=5s
+TimeoutStopSec=20s
+KillSignal=SIGINT
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=herald
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/herald
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
