@@ -56,15 +56,28 @@ async def open_hub(
 ) -> Message:
     """Open or replace the chat's hub message.
 
-    If a previous hub exists in this chat, it is silently deleted so the
-    feed stays clean. Returns the new hub `Message`.
+    Side effects, in order:
+      1. Delete the previous hub message, if any.
+      2. Delete the triggering user message (e.g. their `/start` command)
+         so the feed stays free of slash-command clutter. Best-effort: in
+         non-private chats or if Telegram refuses, we just leave it alone.
+      3. Send a fresh hub message and remember its id.
+
+    Returns the new hub `Message`.
     """
     chat_id = message.chat.id
+
     prev = _registry.get(chat_id)
     if prev is not None:
         with contextlib.suppress(Exception):
             await bot.delete_message(chat_id, prev)
         _registry.clear(chat_id)
+
+    # Strip the user's slash-command message — only attempted in private
+    # chats since groups/channels would require admin rights.
+    if message.chat.type == "private":
+        with contextlib.suppress(Exception):
+            await message.delete()
 
     sent = await message.answer(
         text,
