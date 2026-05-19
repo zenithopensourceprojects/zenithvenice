@@ -8,7 +8,8 @@ private-DM counterpart of `ChannelDispatcher`.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+import time as _time
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
@@ -37,11 +38,17 @@ def is_eligible(user: TelegramUser, post: Post, *, now_ist: datetime) -> bool:
 
     Pure function — no I/O. Filters applied in priority order:
       1. Not blocked
-      2. Notification mode opts in (instant or breaking_only-with-score)
-      3. Category not in user's mute list
-      4. Not currently inside the user's quiet-hours window
+      2. Post was published AFTER the user joined (no backlog spam)
+      3. Notification mode opts in (instant or breaking_only-with-score)
+      4. Category not in user's mute list
+      5. Not currently inside the user's quiet-hours window
     """
     if user.is_blocked:
+        return False
+
+    # Never deliver posts from before the user started the bot.
+    # `created_at` is nullable in the model so we no-op for legacy rows.
+    if user.created_at is not None and post.published_at < user.created_at:
         return False
 
     if user.notif_mode == "silent" or user.notif_mode == "digest":
@@ -79,6 +86,7 @@ class UserFanout:
     async def _fanout_inner(self, post: Post) -> None:
         """Real fanout body — split out so the inflight guard is exception-safe."""
         now_ist = datetime.now(IST)
+        wall_start = _time.monotonic()
         candidates = users.list_active_users(limit=self._settings.telegram_fanout_max_users_per_post)
         log.info("user_fanout_start", post_id=post.id, candidates=len(candidates))
 
@@ -103,6 +111,11 @@ class UserFanout:
             else:
                 failed += 1
 
+        wall_ms = int((_time.monotonic() - wall_start) * 1000)
+        # Time from post publication to first eligible user receiving it.
+        post_age_ms = int(
+            (datetime.now(UTC) - post.published_at).total_seconds() * 1000
+        )
         log.info(
             "user_fanout_done",
             post_id=post.id,
@@ -110,6 +123,8 @@ class UserFanout:
             skipped_filter=skipped_filter,
             skipped_existing=skipped_existing,
             failed=failed,
+            wall_ms=wall_ms,
+            post_age_ms=post_age_ms,
         )
 
     async def _send_one(self, user: TelegramUser, card, keyboard, post_id: str) -> bool:

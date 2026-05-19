@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import random
 from typing import TYPE_CHECKING, Any
 
 from herald.config import get_settings
@@ -77,8 +78,13 @@ class RealtimeListener:
 
             if self._stop.is_set():
                 break
+            # Add up to 25% jitter so a Telegram-side hiccup doesn't make
+            # multiple instances reconnect in lockstep.
+            jitter = random.uniform(0.0, backoff_ms * 0.25)
             with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(self._stop.wait(), timeout=backoff_ms / 1000)
+                await asyncio.wait_for(
+                    self._stop.wait(), timeout=(backoff_ms + jitter) / 1000
+                )
             backoff_ms = min(max_backoff, backoff_ms * 2)
 
         log.info("realtime_stopped")

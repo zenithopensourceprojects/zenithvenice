@@ -9,6 +9,8 @@ for idempotency.
 from __future__ import annotations
 
 import asyncio
+import time as _time
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from aiogram.exceptions import (
@@ -34,8 +36,16 @@ log = get_logger(__name__)
 
 
 def is_eligible(chat: SubscribedChat, post: Post) -> bool:
-    """Pure filter: does this chat want this post?"""
+    """Pure filter: does this chat want this post?
+
+    Filters in order: active, post is newer than the chat's join time,
+    category not muted, credibility above the chat's threshold.
+    """
     if not chat.is_active:
+        return False
+    # Never deliver posts published before the bot was added to this chat.
+    # `added_at` is nullable in the model so we no-op for legacy rows.
+    if chat.added_at is not None and post.published_at < chat.added_at:
         return False
     if post.category in set(chat.muted_categories):
         return False
@@ -62,6 +72,7 @@ class ChatFanout:
             self._inflight.discard(post.id)
 
     async def _fanout_inner(self, post: Post) -> None:
+        wall_start = _time.monotonic()
         candidates = chats.list_active_chats()
         log.info("chat_fanout_start", post_id=post.id, candidates=len(candidates))
 
@@ -95,6 +106,10 @@ class ChatFanout:
             else:
                 failed += 1
 
+        wall_ms = int((_time.monotonic() - wall_start) * 1000)
+        post_age_ms = int(
+            (datetime.now(UTC) - post.published_at).total_seconds() * 1000
+        )
         log.info(
             "chat_fanout_done",
             post_id=post.id,
@@ -102,6 +117,8 @@ class ChatFanout:
             skipped_filter=skipped_filter,
             skipped_existing=skipped_existing,
             failed=failed,
+            wall_ms=wall_ms,
+            post_age_ms=post_age_ms,
         )
 
     async def _send_one(

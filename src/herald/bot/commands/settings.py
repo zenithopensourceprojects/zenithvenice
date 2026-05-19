@@ -2,26 +2,32 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from aiogram import Router
 from aiogram.filters import Command
-from aiogram.types import LinkPreviewOptions, Message
 
+from herald.bot.hub import open_hub
 from herald.bot.keyboards import quiet_hours_label, settings_root_keyboard
 from herald.data import users
+
+if TYPE_CHECKING:
+    from aiogram import Bot
+    from aiogram.types import Message
 
 router = Router(name="settings")
 
 
 _HEADER = (
-    "⚙️  <b>Notification preferences</b>\n\n"
+    "⚙️   <b>Notification preferences</b>\n\n"
     "<i>Tweak when and how Herald reaches you.</i>\n"
     "Changes apply immediately — no save button."
 )
 
 
 @router.message(Command("settings", "prefs"))
-async def on_settings(message: Message) -> None:
-    """Render the settings root menu for the user."""
+async def on_settings(message: Message, bot: Bot) -> None:
+    """Render the settings root menu inside the hub."""
     if not message.from_user:
         return
 
@@ -35,12 +41,8 @@ async def on_settings(message: Message) -> None:
     else:
         quiet = "Off"
 
-    await message.answer(
-        _HEADER,
-        parse_mode="HTML",
-        reply_markup=settings_root_keyboard(
-            current_mode=current_mode,
-            quiet_label=quiet,
-        ),
-        link_preview_options=LinkPreviewOptions(is_disabled=True),
+    keyboard = settings_root_keyboard(
+        current_mode=current_mode,
+        quiet_label=quiet,
     )
+    await open_hub(message, bot, text=_HEADER, keyboard=keyboard)

@@ -1,24 +1,27 @@
-"""/start command — welcome screen and deep-link handler."""
+"""/start command — opens the hub or jumps to a deep-linked story."""
 
 from __future__ import annotations
 
-from aiogram import Router
+from aiogram import Bot, Router
 from aiogram.filters import CommandObject, CommandStart
-from aiogram.types import InlineKeyboardButton, LinkPreviewOptions, Message
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import LinkPreviewOptions, Message
 
+from herald.bot import views
+from herald.bot.hub import open_hub
 from herald.bot.keyboards import article_keyboard
-from herald.config import get_settings
 from herald.data import posts
 from herald.render.card import render_post_card
-from herald.utils.escape import escape_html
 
 router = Router(name="start")
 
 
 @router.message(CommandStart(deep_link=True))
-async def on_start_deep_link(message: Message, command: CommandObject) -> None:
-    """Handle deep-links such as `t.me/IndiaVerifiedBot?start=post_<uuid>`."""
+async def on_start_deep_link(message: Message, command: CommandObject, bot: Bot) -> None:
+    """Handle deep-links such as `t.me/IndiaVerifiedBot?start=post_<uuid>`.
+
+    A deep-link to a specific post still sends a one-shot card (it's a
+    direct share, not a menu action). Plain /start opens the hub.
+    """
     payload = (command.args or "").strip()
     if payload.startswith("post_"):
         post_id = payload.removeprefix("post_")
@@ -36,48 +39,17 @@ async def on_start_deep_link(message: Message, command: CommandObject) -> None:
                 ) if card.preview_url else LinkPreviewOptions(is_disabled=True),
             )
             return
-    await _send_welcome(message)
+    await _open_root_hub(message, bot)
 
 
 @router.message(CommandStart())
-async def on_start(message: Message) -> None:
-    """Plain `/start` with no payload."""
-    await _send_welcome(message)
+async def on_start(message: Message, bot: Bot) -> None:
+    """Plain `/start` opens the hub home screen."""
+    await _open_root_hub(message, bot)
 
 
-async def _send_welcome(message: Message) -> None:
-    """Render the canonical welcome card with quick-action buttons."""
-    settings = get_settings()
-    name = escape_html(message.from_user.first_name or "there") if message.from_user else "there"
-
-    text = (
-        f"🇮🇳  <b>India Verified</b>\n"
-        f"<i>Welcome, {name}.</i>\n\n"
-        "I deliver only verified, multi-source Indian news — no rumours, "
-        "no spam, no engagement traps.\n\n"
-        "<b>What you can do here</b>\n"
-        "•  /latest — the freshest verified stories\n"
-        "•  /categories — browse by topic\n"
-        "•  /search &lt;keyword&gt; — find specific stories\n"
-        "•  /saved — your bookmarks\n"
-        "•  /about — how we verify\n\n"
-        "Every story shows its credibility score, sources, and time."
-    )
-
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="📰  Latest stories", callback_data="cmd:latest"))
-    builder.row(InlineKeyboardButton(text="📂  Browse categories", callback_data="cat:menu"))
-    if settings.telegram_channel_invite_url:
-        builder.row(
-            InlineKeyboardButton(
-                text="📣  Join the channel",
-                url=settings.telegram_channel_invite_url,
-            )
-        )
-
-    await message.answer(
-        text,
-        parse_mode="HTML",
-        reply_markup=builder.as_markup(),
-        link_preview_options=LinkPreviewOptions(is_disabled=True),
-    )
+async def _open_root_hub(message: Message, bot: Bot) -> None:
+    """Render the hub's home view and replace any prior hub message."""
+    first_name = message.from_user.first_name if message.from_user else None
+    text, keyboard = views.render_root(first_name=first_name)
+    await open_hub(message, bot, text=text, keyboard=keyboard)

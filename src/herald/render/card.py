@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from herald.config import get_settings
 from herald.render.bullets import summary_to_bullets
 from herald.render.category import theme_for
-from herald.render.credibility import band_for, render_line
+from herald.render.credibility import band_for, render_bar, render_line
 from herald.render.sources import (
     primary_source,
     render_source_list,
@@ -46,26 +46,41 @@ def render_post_card(post: Post) -> RenderedCard:
     """Return the polished HTML body for a single verified post."""
     theme = theme_for(post.category)
     headline = escape_html(truncate(post.headline.strip(), _HEADLINE_LIMIT))
+    breaking = is_breaking(post)
 
-    breaking_tag = "🔴 <b>BREAKING</b>  ·  " if is_breaking(post) else ""
+    # Top strip: brand  ·  category  ·  freshness. Fits on one line on mobile.
+    age_label = format_time_ago(post.published_at)
+    freshness = f"🔴 LIVE · {age_label}" if breaking else f"⏱ {age_label}"
     header = (
-        f"🇮🇳  <b>INDIA VERIFIED</b>  ·  {theme.emoji} <i>{escape_html(theme.label)}</i>"
+        f"🇮🇳  <b>INDIA VERIFIED</b>  ·  "
+        f"{theme.emoji} <i>{escape_html(theme.label)}</i>  ·  "
+        f"<i>{freshness}</i>"
     )
 
-    cred_line = render_line(post.credibility_score, post.source_count)
+    # Credibility row: score + bar + verdict + source count.
+    cred_line = (
+        f"{render_line(post.credibility_score, post.source_count)}\n"
+        f"{render_bar(post.credibility_score, segments=10)}"
+    )
+
+    headline_block = (
+        f"<b>🔴 BREAKING</b>\n<b>{headline}</b>" if breaking else f"<b>{headline}</b>"
+    )
 
     bullets_raw = summary_to_bullets(post.summary, n=3)
     bullets_block = (
-        "\n".join(f"•  {escape_html(truncate(b, _BULLET_LIMIT))}" for b in bullets_raw)
+        "\n".join(f"▸  {escape_html(truncate(b, _BULLET_LIMIT))}" for b in bullets_raw)
         if bullets_raw
         else ""
     )
 
     source_block = render_source_list(post.sources, top=3)
 
-    footer_parts: list[str] = [f"⏱ {format_time_ago(post.published_at)}"]
+    # Footer reserved for verification / status flags only — freshness moved up top.
+    footer_parts: list[str] = []
     if post.fact_check_flags:
-        footer_parts.append(f"🛡 {len(post.fact_check_flags)} fact-check flag" + ("s" if len(post.fact_check_flags) != 1 else ""))
+        n = len(post.fact_check_flags)
+        footer_parts.append(f"🛡 {n} fact-check flag" + ("s" if n != 1 else ""))
     elif post.credibility_score >= 80:
         footer_parts.append("🛡 Fact-check passed")
     if post.status == "corrected":
@@ -73,18 +88,17 @@ def render_post_card(post: Post) -> RenderedCard:
     if post.status == "retracted":
         footer_parts.append("⚠️ Retracted")
 
-    footer = "  ·  ".join(footer_parts)
-
     sections: list[str] = [
         header,
         cred_line,
-        f"{breaking_tag}<b>{headline}</b>",
+        headline_block,
     ]
     if bullets_block:
         sections.append(bullets_block)
     if source_block:
         sections.append(source_block)
-    sections.append(footer)
+    if footer_parts:
+        sections.append("  ·  ".join(footer_parts))
 
     text = "\n\n".join(sections)
     preview = primary_source(post.sources)

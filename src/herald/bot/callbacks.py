@@ -9,10 +9,6 @@ from aiogram import Bot, F, Router
 from aiogram.types import CallbackQuery, LinkPreviewOptions
 
 from herald.bot.keyboards import (
-    article_keyboard,
-    back_to_categories_keyboard,
-    categories_keyboard,
-    category_label,
     quiet_hours_keyboard,
     quiet_hours_label,
     quiet_preset_window,
@@ -22,7 +18,6 @@ from herald.bot.keyboards import (
 )
 from herald.data import bookmarks, posts, users
 from herald.logging_setup import get_logger
-from herald.render.card import render_full_sources_card, render_post_card
 
 if TYPE_CHECKING:
     from herald.data.models import Post
@@ -79,7 +74,11 @@ async def on_bookmark_remove(query: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("src:all:"))
 async def on_show_all_sources(query: CallbackQuery, bot: Bot) -> None:
-    """Send a follow-up message containing every source for a post."""
+    """Open the hub at the all-sources view for the post under this card.
+
+    The feed card itself stays in place; the hub message at the bottom of
+    the chat is replaced with the sources view, keeping the feed clean.
+    """
     post_id = _split_callback(query.data, "src:all:")
     if not post_id:
         await query.answer("Sorry, that button is no longer valid.", show_alert=False)
@@ -90,89 +89,15 @@ async def on_show_all_sources(query: CallbackQuery, bot: Bot) -> None:
         await query.answer("This post is no longer available.", show_alert=True)
         return
 
-    body = render_full_sources_card(post)
-    chat_id = query.message.chat.id if query.message else (query.from_user.id if query.from_user else None)
-    if chat_id is None:
+    if query.message is None:
         await query.answer()
         return
 
-    await bot.send_message(
-        chat_id=chat_id,
-        text=body,
-        parse_mode="HTML",
-        message_thread_id=query.message.message_thread_id if query.message else None,
-        link_preview_options=LinkPreviewOptions(is_disabled=True),
-        reply_to_message_id=query.message.message_id if query.message else None,
-        disable_notification=True,
-    )
-    await query.answer()
+    from herald.bot import views
+    from herald.bot.hub import open_hub
 
-
-@router.callback_query(F.data == "cat:menu")
-async def on_categories_menu(query: CallbackQuery) -> None:
-    """Re-render the category picker in place."""
-    if query.message:
-        with contextlib.suppress(Exception):
-            await query.message.edit_text(
-                "📂  <b>Categories</b>\n\nPick a topic to see the latest verified stories.",
-                parse_mode="HTML",
-                reply_markup=categories_keyboard(),
-                link_preview_options=LinkPreviewOptions(is_disabled=True),
-            )
-    await query.answer()
-
-
-@router.callback_query(F.data.startswith("cat:show:"))
-async def on_category_show(query: CallbackQuery, bot: Bot) -> None:
-    """Show the latest 5 posts for a given category."""
-    category = _split_callback(query.data, "cat:show:")
-    if not category:
-        await query.answer()
-        return
-
-    items = posts.fetch_latest(limit=5, category=category)
-    chat_id = query.message.chat.id if query.message else (query.from_user.id if query.from_user else None)
-    if chat_id is None:
-        await query.answer()
-        return
-
-    if not items:
-        if query.message:
-            with contextlib.suppress(Exception):
-                await query.message.edit_text(
-                    f"<b>{category_label(category)}</b>\n\n"
-                    "<i>No verified stories in this category yet.</i>",
-                    parse_mode="HTML",
-                    reply_markup=back_to_categories_keyboard(),
-                )
-        await query.answer()
-        return
-
-    if query.message:
-        with contextlib.suppress(Exception):
-            await query.message.edit_text(
-                f"<b>{category_label(category)}</b>\n\n"
-                f"<i>{len(items)} verified stories — newest first.</i>",
-                parse_mode="HTML",
-                reply_markup=back_to_categories_keyboard(),
-                link_preview_options=LinkPreviewOptions(is_disabled=True),
-            )
-
-    for post in items:
-        card = render_post_card(post)
-        await bot.send_message(
-            chat_id=chat_id,
-            text=card.text,
-            parse_mode="HTML",
-            reply_markup=article_keyboard(post),
-            link_preview_options=LinkPreviewOptions(
-                url=card.preview_url,
-                prefer_large_media=True,
-                show_above_text=False,
-            ) if card.preview_url else LinkPreviewOptions(is_disabled=True),
-            disable_notification=True,
-        )
-
+    text, keyboard = views.render_sources_view(post, return_cd="hub:root")
+    await open_hub(query.message, bot, text=text, keyboard=keyboard)
     await query.answer()
 
 

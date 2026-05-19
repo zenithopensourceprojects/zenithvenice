@@ -75,8 +75,21 @@ class DigestPublisher:
 
         sent = 0
         skipped = 0
+        # The digest is a single rendered string covering the last 12h. Users
+        # who joined inside that window haven't seen those posts before, so it
+        # would be backlog spam. Skip any user whose `created_at` is newer
+        # than the oldest post in the digest.
+        oldest_in_digest = min((p.published_at for p in items), default=None)
+
         for target in targets:
             if self._is_quiet_now(target, when_ist):
+                skipped += 1
+                continue
+            if (
+                oldest_in_digest is not None
+                and target.created_at is not None
+                and target.created_at > oldest_in_digest
+            ):
                 skipped += 1
                 continue
             ok = await self._send(target, text, keyboard)

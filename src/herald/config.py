@@ -83,7 +83,7 @@ class Settings(BaseSettings):
     telegram_rate_per_chat_per_second: float = 1.0
     telegram_rate_group_per_minute: int = 20
 
-    telegram_poller_interval_seconds: int = 60
+    telegram_poller_interval_seconds: int = 20
     telegram_realtime_reconnect_backoff_ms: int = 2000
 
     telegram_use_webhook: bool = False

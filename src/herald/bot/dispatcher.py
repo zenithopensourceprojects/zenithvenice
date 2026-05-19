@@ -9,6 +9,7 @@ from aiogram.types import BotCommand
 
 from herald.bot import callbacks as callbacks_module
 from herald.bot import chat_membership as chat_membership_module
+from herald.bot import hub_callbacks as hub_callbacks_module
 from herald.bot import reactions as reactions_module
 from herald.bot.commands import register_commands
 from herald.bot.middleware import ErrorLoggingMiddleware, UserActivityMiddleware
@@ -51,6 +52,7 @@ def build_dispatcher() -> Dispatcher:
     dp.callback_query.middleware(activity_mw)
 
     register_commands(dp)
+    dp.include_router(hub_callbacks_module.router)
     dp.include_router(callbacks_module.router)
     dp.include_router(reactions_module.router)
     dp.include_router(chat_membership_module.router)

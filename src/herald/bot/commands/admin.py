@@ -62,6 +62,91 @@ async def on_stats(message: Message) -> None:
     )
 
 
+@router.message(Command("health"))
+async def on_health(message: Message) -> None:
+    """Live operational health for admins: pending, lag, active subscribers."""
+    if not message.from_user or not _is_admin(message.from_user.id):
+        return
+
+    from datetime import UTC, datetime, timedelta
+
+    client = get_supabase()
+    try:
+        # Pending posts (no channel-delivery row yet).
+        pending = (
+            client.table("posts_pending_channel_delivery")
+            .select("id", count="exact")
+            .limit(1)
+            .execute()
+            .count
+            or 0
+        )
+        # Active users + chats.
+        active_users = (
+            client.table("telegram_users")
+            .select("tg_user_id", count="exact")
+            .eq("is_blocked", False)
+            .limit(1)
+            .execute()
+            .count
+            or 0
+        )
+        active_chats = (
+            client.table("telegram_subscribed_chats")
+            .select("tg_chat_id", count="exact")
+            .eq("is_active", True)
+            .limit(1)
+            .execute()
+            .count
+            or 0
+        )
+        # Most recent delivery — gives instant "is the pipeline alive?" signal.
+        recent = (
+            client.table("telegram_deliveries")
+            .select("sent_at, kind")
+            .order("sent_at", desc=True)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        # 24h delivery throughput.
+        since = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
+        last_24h = (
+            client.table("telegram_deliveries")
+            .select("id", count="exact")
+            .gte("sent_at", since)
+            .limit(1)
+            .execute()
+            .count
+            or 0
+        )
+    except Exception as exc:
+        await message.answer(f"<b>health failed:</b> <code>{exc}</code>", parse_mode="HTML")
+        log.exception("admin_health_failed", error=str(exc))
+        return
+
+    last_line = "—"
+    if recent:
+        ts = recent[0].get("sent_at")
+        kind = recent[0].get("kind", "?")
+        last_line = f"<code>{ts}</code>  ·  {kind}"
+
+    body = (
+        "🩺  <b>Herald health</b>\n\n"
+        f"<b>Pending posts</b>     {pending:,}\n"
+        f"<b>Active users</b>      {active_users:,}\n"
+        f"<b>Active chats</b>      {active_chats:,}\n"
+        f"<b>Deliveries (24h)</b>  {last_24h:,}\n"
+        f"<b>Last delivery</b>     {last_line}"
+    )
+    await message.answer(
+        body,
+        parse_mode="HTML",
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
+    )
+
+
 @router.message(Command("broadcast"))
 async def on_broadcast(message: Message, command: CommandObject, bot: Bot) -> None:
     """Send a one-off plain-HTML announcement to every active user.
